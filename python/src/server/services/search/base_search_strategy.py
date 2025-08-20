@@ -1,28 +1,33 @@
-"""
-Base Search Strategy
+"""Basic vector search using Qdrant."""
 
-Implements the foundational vector similarity search that all other strategies build upon.
-This is the core semantic search functionality.
-"""
+from __future__ import annotations
 
 from typing import Any
 
-from supabase import Client
+from qdrant_client import QdrantClient, models
 
-from ...config.logfire_config import get_logger, safe_span
+from ..client_manager import get_qdrant_client
+from ...config.logfire_config import get_logger
 
 logger = get_logger(__name__)
 
-# Fixed similarity threshold for vector results
-SIMILARITY_THRESHOLD = 0.15
-
 
 class BaseSearchStrategy:
-    """Base strategy implementing fundamental vector similarity search"""
+    """Wrapper around :class:`QdrantClient.search`.
 
-    def __init__(self, supabase_client: Client):
-        """Initialize with database client"""
-        self.supabase_client = supabase_client
+    The collection name is determined by the ``table_rpc`` parameter which
+    mirrors the previous Supabase RPC function names.  ``match_archon_crawled_pages``
+    maps to the ``docs`` collection and ``match_archon_code_examples`` maps to
+    ``code``.
+    """
+
+    COLLECTION_MAP = {
+        "match_archon_crawled_pages": "docs",
+        "match_archon_code_examples": "code",
+    }
+
+    def __init__(self, client: QdrantClient | None = None):
+        self.client = client or get_qdrant_client()
 
     async def vector_search(
         self,
@@ -31,55 +36,33 @@ class BaseSearchStrategy:
         filter_metadata: dict | None = None,
         table_rpc: str = "match_archon_crawled_pages",
     ) -> list[dict[str, Any]]:
-        """
-        Perform basic vector similarity search.
+        collection = self.COLLECTION_MAP.get(table_rpc, table_rpc)
 
-        This is the foundational semantic search that all strategies use.
+        logger.debug(
+            "Vector search", collection=collection, match_count=match_count, filter=filter_metadata
+        )
 
-        Args:
-            query_embedding: The embedding vector for the query
-            match_count: Number of results to return
-            filter_metadata: Optional metadata filters
-            table_rpc: The RPC function to call (match_archon_crawled_pages or match_archon_code_examples)
+        query_filter = None
+        if filter_metadata:
+            must = [models.FieldCondition(key=k, match=models.MatchValue(v)) for k, v in filter_metadata.items()]
+            query_filter = models.Filter(must=must)
 
-        Returns:
-            List of matching documents with similarity scores
-        """
-        with safe_span("base_vector_search", table=table_rpc, match_count=match_count) as span:
-            try:
-                # Build RPC parameters
-                rpc_params = {"query_embedding": query_embedding, "match_count": match_count}
+        results = self.client.search(
+            collection_name=collection,
+            query_vector=query_embedding,
+            limit=match_count,
+            query_filter=query_filter,
+        )
 
-                # Add filter parameters
-                if filter_metadata:
-                    if "source" in filter_metadata:
-                        rpc_params["source_filter"] = filter_metadata["source"]
-                        rpc_params["filter"] = {}
-                    else:
-                        rpc_params["filter"] = filter_metadata
-                else:
-                    rpc_params["filter"] = {}
+        return [
+            {
+                "id": r.id,
+                "score": r.score,
+                **(r.payload or {}),
+            }
+            for r in results
+        ]
 
-                # Execute search
-                response = self.supabase_client.rpc(table_rpc, rpc_params).execute()
 
-                # Filter by similarity threshold
-                filtered_results = []
-                if response.data:
-                    for result in response.data:
-                        similarity = float(result.get("similarity", 0.0))
-                        if similarity >= SIMILARITY_THRESHOLD:
-                            filtered_results.append(result)
+__all__ = ["BaseSearchStrategy"]
 
-                span.set_attribute("results_found", len(filtered_results))
-                span.set_attribute(
-                    "results_filtered",
-                    len(response.data) - len(filtered_results) if response.data else 0,
-                )
-
-                return filtered_results
-
-            except Exception as e:
-                logger.error(f"Vector search failed: {e}")
-                span.set_attribute("error", str(e))
-                return []

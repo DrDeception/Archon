@@ -1,43 +1,68 @@
-"""
-Client Manager Service
+"""Client and database connection helpers for local deployment.
 
-Manages database and API client connections.
+This module replaces the previous Supabase/Postgres client with a
+lightweight SQLite connection and also exposes a helper to create a
+Qdrant client for local vector storage.
 """
+
+from __future__ import annotations
 
 import os
-import re
+import sqlite3
+from pathlib import Path
+from typing import Iterator
 
-from supabase import Client, create_client
-
-from ..config.logfire_config import search_logger
+from qdrant_client import QdrantClient
 
 
-def get_supabase_client() -> Client:
+# ---------------------------------------------------------------------------
+# SQLite helpers
+# ---------------------------------------------------------------------------
+
+DB_PATH = Path(os.getenv("ARCHON_DB_PATH", "archon.db"))
+
+
+def get_db() -> sqlite3.Connection:
+    """Return a SQLite connection with ``Row`` factory enabled."""
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+class SQLiteCursorContext:
+    """Context manager yielding a cursor and committing on exit."""
+
+    def __enter__(self) -> sqlite3.Cursor:  # pragma: no cover - trivial
+        self.conn = get_db()
+        self.cur = self.conn.cursor()
+        return self.cur
+
+    def __exit__(self, exc_type, exc, tb):  # pragma: no cover - trivial
+        if exc_type is None:
+            self.conn.commit()
+        else:
+            self.conn.rollback()
+        self.conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Qdrant helpers
+# ---------------------------------------------------------------------------
+
+QDRANT_PATH = os.getenv("QDRANT_PATH", "./qdrant_db")
+
+
+def get_qdrant_client() -> QdrantClient:
+    """Create a local Qdrant client instance.
+
+    The client stores data on the filesystem under ``QDRANT_PATH`` which
+    defaults to ``./qdrant_db``.  Using the file based API keeps deployment
+    completely local without any external dependencies.
     """
-    Get a Supabase client instance.
 
-    Returns:
-        Supabase client instance
-    """
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
+    return QdrantClient(path=QDRANT_PATH)
 
-    if not url or not key:
-        raise ValueError(
-            "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables"
-        )
 
-    try:
-        # Let Supabase handle connection pooling internally
-        client = create_client(url, key)
+__all__ = ["get_db", "get_qdrant_client", "SQLiteCursorContext"]
 
-        # Extract project ID from URL for logging purposes only
-        match = re.match(r"https://([^.]+)\.supabase\.co", url)
-        if match:
-            project_id = match.group(1)
-            search_logger.info(f"Supabase client initialized - project_id={project_id}")
-
-        return client
-    except Exception as e:
-        search_logger.error(f"Failed to create Supabase client: {e}")
-        raise

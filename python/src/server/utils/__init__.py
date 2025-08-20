@@ -19,7 +19,11 @@ import asyncio
 import os
 from typing import Optional
 
-from ..services.client_manager import get_supabase_client
+# Local deployment uses SQLite instead of Supabase.
+from ..services.client_manager import get_db, get_qdrant_client
+
+# Backward compatibility: some modules still call ``get_supabase_client``.
+get_supabase_client = get_db
 from ..services.embeddings import (
     create_embedding,
     create_embeddings_batch,
@@ -83,6 +87,8 @@ __all__ = [
     "ThreadingConfig",
     "RateLimitConfig",
     # Client functions
+    "get_db",
+    "get_qdrant_client",
     "get_supabase_client",
     # Embedding functions
     "create_embedding",

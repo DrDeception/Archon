@@ -18,7 +18,6 @@ from datetime import datetime
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from ..utils import get_supabase_client
 from ..services.storage import DocumentStorageService
 from ..services.search.rag_service import RAGService
 from ..services.knowledge import KnowledgeItemService, DatabaseMetricsService
@@ -30,7 +29,6 @@ from ..config.logfire_config import get_logger, safe_logfire_error, safe_logfire
 from ..services.crawler_manager import get_crawler
 from ..services.search.rag_service import RAGService
 from ..services.storage import DocumentStorageService
-from ..utils import get_supabase_client
 from ..utils.document_processing import extract_text_from_document
 
 # Get logger for this module

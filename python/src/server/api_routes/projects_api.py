@@ -18,7 +18,6 @@ from pydantic import BaseModel
 # Removed direct logging import - using unified config
 # Set up standard logger for background tasks
 from ..config.logfire_config import get_logger, logfire
-from ..utils import get_supabase_client
 
 logger = get_logger(__name__)
 

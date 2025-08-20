@@ -12,8 +12,7 @@ crawl4ai==0.6.2
 python-socketio[asyncio]>=5.11.0
 
 # Database and storage
-supabase==2.15.1
-asyncpg>=0.29.0
+qdrant-client>=1.9.1
 
 # AI/ML libraries (ALL ML models belong here)
 openai==1.71.0
